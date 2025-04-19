@@ -1,509 +1,692 @@
 "use client"
 
-import { useState, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
-import { Separator } from "@/components/ui/separator"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import Image from "next/image"
-import { QrCode, Upload } from "lucide-react"
+import type React from "react"
+
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Save, Upload, Plus, Trash2, Download, SettingsIcon, DollarSign, FileText, Tag } from "lucide-react"
+import { useAuthStore } from "@/lib/auth-state"
+import { useStore, type Currency } from "@/lib/store"
+import { useToast } from "@/components/providers/toast-provider"
+import HomeButton from "@/components/home-button"
 
 export default function SettingsPage() {
-  const [storeSettings, setStoreSettings] = useState({
+  const { isAuthenticated, user } = useAuthStore()
+  const router = useRouter()
+  const { settings, updateSettings, addCurrency, updateCurrency, deleteCurrency, setActiveCurrency } = useStore()
+  const { showToast } = useToast()
+
+  // Initialize with defaults if settings are missing
+  const defaultSettings = {
     name: "My Store",
-    address: "123 Main St, City, State, ZIP",
-    phone: "123-456-7890",
+    address: "123 Store Street, City",
+    phone: "1234567890",
     email: "store@example.com",
-    website: "www.mystore.com",
-    gstin: "22AAAAA0000A1Z5",
-    primaryColor: "#0f172a",
-    logoUrl: "",
-  })
-
-  const [taxSettings, setTaxSettings] = useState({
-    enableGST: true,
-    enableTDS: false,
-    enableTCS: false,
-    defaultGSTRate: "18",
-    defaultTDSRate: "2",
-    defaultTCSRate: "1",
-  })
-
-  const [invoiceSettings, setInvoiceSettings] = useState({
-    prefix: "INV",
-    startNumber: "1001",
-    termsAndConditions: "1. Goods once sold will not be taken back\n2. All disputes are subject to local jurisdiction",
-    showLogo: true,
-    showSignature: true,
-  })
-
-  const [paymentSettings, setPaymentSettings] = useState({
-    acceptCash: true,
-    acceptCard: true,
-    acceptUPI: true,
-    acceptBankTransfer: true,
-    qrCodeUrl: "",
-  })
-
-  const logoInputRef = useRef(null)
-  const qrCodeInputRef = useRef(null)
-
-  const handleStoreSettingsChange = (e) => {
-    const { name, value } = e.target
-    setStoreSettings({
-      ...storeSettings,
-      [name]: value,
-    })
+    gst: "22AAAAA0000A1Z5",
+    primaryColor: "#4F46E5",
+    enableGst: true,
+    splitGst: true,
+    enableTcs: false,
+    enableTds: false,
   }
 
-  const handleTaxSettingsChange = (e) => {
-    const { name, value, type, checked } = e.target
-    setTaxSettings({
-      ...taxSettings,
-      [name]: type === "checkbox" ? checked : value,
-    })
-  }
+  const [name, setName] = useState(settings?.name || defaultSettings.name)
+  const [address, setAddress] = useState(settings?.address || defaultSettings.address)
+  const [phone, setPhone] = useState(settings?.phone || defaultSettings.phone)
+  const [email, setEmail] = useState(settings?.email || defaultSettings.email)
+  const [gst, setGst] = useState(settings?.gst || defaultSettings.gst)
+  const [primaryColor, setPrimaryColor] = useState(settings?.primaryColor || defaultSettings.primaryColor)
+  const [enableGst, setEnableGst] = useState(settings?.enableGst ?? defaultSettings.enableGst)
+  const [splitGst, setSplitGst] = useState(settings?.splitGst ?? defaultSettings.splitGst)
+  const [enableTcs, setEnableTcs] = useState(settings?.enableTcs ?? defaultSettings.enableTcs)
+  const [enableTds, setEnableTds] = useState(settings?.enableTds ?? defaultSettings.enableTds)
+  const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState("general")
 
-  const handleInvoiceSettingsChange = (e) => {
-    const { name, value, type, checked } = e.target
-    setInvoiceSettings({
-      ...invoiceSettings,
-      [name]: type === "checkbox" ? checked : value,
-    })
-  }
+  // Currency states
+  const defaultCurrency = { code: "INR", name: "Indian Rupee", symbol: "₹", exchangeRate: 1 }
+  const defaultCurrencies = [defaultCurrency]
 
-  const handleSwitchChange = (name, checked) => {
-    setTaxSettings({
-      ...taxSettings,
-      [name]: checked,
-    })
-  }
+  const [selectedCurrency, setSelectedCurrency] = useState(settings?.currency?.code || defaultCurrency.code)
+  const [newCurrencyCode, setNewCurrencyCode] = useState("")
+  const [newCurrencyName, setNewCurrencyName] = useState("")
+  const [newCurrencySymbol, setNewCurrencySymbol] = useState("")
+  const [newCurrencyRate, setNewCurrencyRate] = useState("1")
+  const [showAddCurrency, setShowAddCurrency] = useState(false)
+  const [editingCurrency, setEditingCurrency] = useState<string | null>(null)
+  const [editCurrencyRate, setEditCurrencyRate] = useState("1")
 
-  const handleInvoiceSwitchChange = (name, checked) => {
-    setInvoiceSettings({
-      ...invoiceSettings,
-      [name]: checked,
-    })
-  }
-
-  const handlePaymentSwitchChange = (name, checked) => {
-    setPaymentSettings({
-      ...paymentSettings,
-      [name]: checked,
-    })
-  }
-
-  const handleLogoUpload = (e) => {
-    const file = e.target.files[0]
+  // Handle logo upload
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
       reader.onload = (event) => {
-        setStoreSettings({
-          ...storeSettings,
-          logoUrl: event.target.result,
-        })
+        if (event.target?.result) {
+          updateSettings({ logo: event.target.result as string })
+          showToast("success", "Logo uploaded successfully")
+        }
       }
       reader.readAsDataURL(file)
     }
   }
 
-  const handleQrCodeUpload = (e) => {
-    const file = e.target.files[0]
+  // Handle QR code upload
+  const handleQrCodeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
       reader.onload = (event) => {
-        setPaymentSettings({
-          ...paymentSettings,
-          qrCodeUrl: event.target.result,
-        })
+        if (event.target?.result) {
+          updateSettings({ qrCode: event.target.result as string })
+          showToast("success", "QR Code uploaded successfully")
+        }
       }
       reader.readAsDataURL(file)
     }
   }
+
+  // Save settings
+  const handleSaveSettings = () => {
+    setIsSaving(true)
+
+    setTimeout(() => {
+      updateSettings({
+        name,
+        address,
+        phone,
+        email,
+        gst,
+        primaryColor,
+        enableGst,
+        splitGst,
+        enableTcs,
+        enableTds,
+      })
+
+      showToast("success", "Settings saved successfully")
+      setIsSaving(false)
+    }, 800)
+  }
+
+  // In the formatCurrency function
+  const formatCurrency = (amount: number) => {
+    try {
+      const currency = settings?.currency || defaultCurrency
+      return `${currency.symbol}${amount.toFixed(2)}`
+    } catch (error) {
+      // Fallback to INR if there's an error
+      return `₹${amount.toFixed(2)}`
+    }
+  }
+
+  // Handle currency change
+  const handleCurrencyChange = (code: string) => {
+    setSelectedCurrency(code)
+    setActiveCurrency(code)
+    showToast("success", `Currency changed to ${code}`)
+  }
+
+  // Add new currency
+  const handleAddCurrency = () => {
+    if (!newCurrencyCode || !newCurrencyName || !newCurrencySymbol || !newCurrencyRate) {
+      showToast("error", "All currency fields are required")
+      return
+    }
+
+    const newCurrency: Currency = {
+      code: newCurrencyCode.toUpperCase(),
+      name: newCurrencyName,
+      symbol: newCurrencySymbol,
+      exchangeRate: Number.parseFloat(newCurrencyRate),
+    }
+
+    addCurrency(newCurrency)
+    showToast("success", `Currency ${newCurrencyCode.toUpperCase()} added successfully`)
+
+    // Reset form
+    setNewCurrencyCode("")
+    setNewCurrencyName("")
+    setNewCurrencySymbol("")
+    setNewCurrencyRate("1")
+    setShowAddCurrency(false)
+  }
+
+  // Update currency exchange rate
+  const handleUpdateCurrencyRate = (code: string) => {
+    if (!editCurrencyRate) {
+      showToast("error", "Exchange rate is required")
+      return
+    }
+
+    updateCurrency(code, { exchangeRate: Number.parseFloat(editCurrencyRate) })
+    showToast("success", `Exchange rate for ${code} updated successfully`)
+    setEditingCurrency(null)
+  }
+
+  // Delete currency
+  const handleDeleteCurrency = (code: string) => {
+    if (code === "INR") {
+      showToast("error", "Cannot delete base currency (INR)")
+      return
+    }
+
+    deleteCurrency(code)
+    showToast("success", `Currency ${code} deleted successfully`)
+
+    // If deleted currency was selected, revert to INR
+    if (selectedCurrency === code) {
+      setSelectedCurrency("INR")
+      setActiveCurrency("INR")
+    }
+  }
+
+  // Generate and download sample report
+  const handleExportReport = () => {
+    showToast("info", "Generating report...")
+
+    setTimeout(() => {
+      try {
+        // Create a simple CSV report
+        const headers = "Date,Invoice,Customer,Amount,Tax\n"
+        const rows =
+          settings?.bills
+            ?.map(
+              (bill) =>
+                `${new Date(bill.createdAt).toLocaleDateString()},${bill.billNumber},${bill.customerName || "Walk-in"},${bill.total},${bill.gstAmount}`,
+            )
+            .join("\n") || "No data"
+
+        const csvContent = headers + rows
+
+        // Create a blob and download
+        const blob = new Blob([csvContent], { type: "text/csv" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `sales-report-${new Date().toISOString().split("T")[0]}.csv`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+
+        showToast("success", "Report downloaded successfully")
+      } catch (error) {
+        console.error("Error generating report:", error)
+        showToast("error", "Failed to generate report")
+      }
+    }, 1500)
+  }
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/login")
+      return
+    }
+
+    // Only admin and manager can access settings
+    if (user?.role !== "admin" && user?.role !== "manager") {
+      showToast("error", "You don't have permission to access settings")
+      router.push("/dashboard")
+    }
+  }, [isAuthenticated, user, router, showToast])
+
+  if (!isAuthenticated || (user?.role !== "admin" && user?.role !== "manager")) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+      </div>
+    )
+  }
+
+  // Ensure we have available currencies
+  const availableCurrencies = settings?.availableCurrencies || defaultCurrencies
 
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-      <Tabs defaultValue="store" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="store">Store Settings</TabsTrigger>
-          <TabsTrigger value="tax">Tax Settings</TabsTrigger>
-          <TabsTrigger value="invoice">Invoice Settings</TabsTrigger>
-          <TabsTrigger value="payment">Payment Settings</TabsTrigger>
-        </TabsList>
-        <TabsContent value="store">
-          <Card>
-            <CardHeader>
-              <CardTitle>Store Information</CardTitle>
-              <CardDescription>Manage your store details that will appear on invoices and receipts</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="store-name">Store Name</Label>
-                  <Input id="store-name" name="name" value={storeSettings.name} onChange={handleStoreSettingsChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="store-gstin">GSTIN</Label>
-                  <Input
-                    id="store-gstin"
-                    name="gstin"
-                    value={storeSettings.gstin}
-                    onChange={handleStoreSettingsChange}
-                  />
-                </div>
+    <div className="p-6">
+      <div className="bg-white rounded-lg shadow-sm border">
+        <div className="flex justify-between items-center p-6 border-b">
+          <h3 className="text-xl font-medium">Store Settings</h3>
+          <div className="flex space-x-2">
+            <button
+              onClick={handleExportReport}
+              className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+            >
+              <Download className="h-4 w-4" />
+              <span>Export Report</span>
+            </button>
+            <HomeButton />
+            <button
+              onClick={handleSaveSettings}
+              disabled={isSaving}
+              className="flex items-center space-x-2 px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              <span>{isSaving ? "Saving..." : "Save Settings"}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex border-b">
+          <button
+            onClick={() => setActiveTab("general")}
+            className={`px-6 py-3 font-medium text-sm flex items-center ${
+              activeTab === "general" ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <SettingsIcon className="h-4 w-4 mr-2" />
+            General
+          </button>
+          <button
+            onClick={() => setActiveTab("currency")}
+            className={`px-6 py-3 font-medium text-sm flex items-center ${
+              activeTab === "currency"
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <DollarSign className="h-4 w-4 mr-2" />
+            Currency
+          </button>
+          <button
+            onClick={() => setActiveTab("tax")}
+            className={`px-6 py-3 font-medium text-sm flex items-center ${
+              activeTab === "tax" ? "border-b-2 border-blue-600 text-blue-600" : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            Tax
+          </button>
+          <button
+            onClick={() => setActiveTab("branding")}
+            className={`px-6 py-3 font-medium text-sm flex items-center ${
+              activeTab === "branding"
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            <Tag className="h-4 w-4 mr-2" />
+            Branding
+          </button>
+        </div>
+
+        <div className="p-6">
+          {activeTab === "general" && (
+            <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="bg-blue-50 p-4 rounded-md mb-6">
+                <h4 className="font-medium text-blue-800 mb-2">Store Information</h4>
+                <p className="text-sm text-blue-700">This information will appear on your invoices and receipts.</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="store-address">Address</Label>
-                <Input
-                  id="store-address"
-                  name="address"
-                  value={storeSettings.address}
-                  onChange={handleStoreSettingsChange}
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="store-phone">Phone</Label>
-                  <Input
-                    id="store-phone"
-                    name="phone"
-                    value={storeSettings.phone}
-                    onChange={handleStoreSettingsChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="store-email">Email</Label>
-                  <Input
-                    id="store-email"
-                    name="email"
-                    value={storeSettings.email}
-                    onChange={handleStoreSettingsChange}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="store-website">Website</Label>
-                <Input
-                  id="store-website"
-                  name="website"
-                  value={storeSettings.website}
-                  onChange={handleStoreSettingsChange}
-                />
-              </div>
-              <Separator className="my-4" />
-              <div className="space-y-2">
-                <Label>Store Logo</Label>
-                <div className="flex flex-col gap-4">
-                  {storeSettings.logoUrl ? (
-                    <div className="flex flex-col items-center gap-4 sm:flex-row">
-                      <div className="border p-4 rounded-lg">
-                        <Image
-                          src={storeSettings.logoUrl || "/placeholder.svg"}
-                          alt="Store Logo"
-                          width={100}
-                          height={100}
-                          className="object-contain"
-                        />
-                      </div>
-                      <Button variant="outline" onClick={() => logoInputRef.current?.click()}>
-                        Change Logo
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="border border-dashed rounded-lg p-8 flex flex-col items-center justify-center">
-                      <Upload className="h-10 w-10 text-muted-foreground mb-4" />
-                      <p className="text-sm text-center text-muted-foreground mb-4">Upload your store logo</p>
-                      <Button variant="outline" onClick={() => logoInputRef.current?.click()}>
-                        Upload Logo
-                      </Button>
-                    </div>
-                  )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Store Name</label>
                   <input
-                    ref={logoInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoUpload}
-                    className="hidden"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="primary-color">Primary Color</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="primary-color"
-                    name="primaryColor"
-                    type="color"
-                    value={storeSettings.primaryColor}
-                    onChange={handleStoreSettingsChange}
-                    className="w-12 h-10 p-1"
-                  />
-                  <Input value={storeSettings.primaryColor} onChange={handleStoreSettingsChange} name="primaryColor" />
-                </div>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button>Save Changes</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-        <TabsContent value="tax">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tax Configuration</CardTitle>
-              <CardDescription>Configure tax settings for your invoices</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="enable-gst">Enable GST</Label>
-                  <p className="text-sm text-muted-foreground">Apply GST to your invoices</p>
-                </div>
-                <Switch
-                  id="enable-gst"
-                  checked={taxSettings.enableGST}
-                  onCheckedChange={(checked) => handleSwitchChange("enableGST", checked)}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="enable-tds">Enable TDS</Label>
-                  <p className="text-sm text-muted-foreground">Apply TDS to your invoices</p>
-                </div>
-                <Switch
-                  id="enable-tds"
-                  checked={taxSettings.enableTDS}
-                  onCheckedChange={(checked) => handleSwitchChange("enableTDS", checked)}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="enable-tcs">Enable TCS</Label>
-                  <p className="text-sm text-muted-foreground">Apply TCS to your invoices</p>
-                </div>
-                <Switch
-                  id="enable-tcs"
-                  checked={taxSettings.enableTCS}
-                  onCheckedChange={(checked) => handleSwitchChange("enableTCS", checked)}
-                />
-              </div>
-              <Separator />
-              <div className="space-y-2">
-                <Label htmlFor="default-gst-rate">Default GST Rate</Label>
-                <RadioGroup
-                  id="default-gst-rate"
-                  value={taxSettings.defaultGSTRate}
-                  onValueChange={(value) => setTaxSettings({ ...taxSettings, defaultGSTRate: value })}
-                  className="flex flex-wrap gap-4"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="0" id="gst-0" />
-                    <Label htmlFor="gst-0">0%</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="5" id="gst-5" />
-                    <Label htmlFor="gst-5">5%</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="12" id="gst-12" />
-                    <Label htmlFor="gst-12">12%</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="18" id="gst-18" />
-                    <Label htmlFor="gst-18">18%</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="28" id="gst-28" />
-                    <Label htmlFor="gst-28">28%</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button>Save Tax Settings</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-        <TabsContent value="invoice">
-          <Card>
-            <CardHeader>
-              <CardTitle>Invoice Settings</CardTitle>
-              <CardDescription>Customize how your invoices look and behave</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="invoice-prefix">Invoice Prefix</Label>
-                  <Input
-                    id="invoice-prefix"
-                    name="prefix"
-                    value={invoiceSettings.prefix}
-                    onChange={handleInvoiceSettingsChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invoice-start">Starting Number</Label>
-                  <Input
-                    id="invoice-start"
-                    name="startNumber"
-                    value={invoiceSettings.startNumber}
-                    onChange={handleInvoiceSettingsChange}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="terms">Terms and Conditions</Label>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Store Address</label>
                 <textarea
-                  id="terms"
-                  name="termsAndConditions"
-                  value={invoiceSettings.termsAndConditions}
-                  onChange={handleInvoiceSettingsChange}
-                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
+                <input
+                  type="text"
+                  value={gst}
+                  onChange={(e) => setGst(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="show-logo">Show Logo on Invoice</Label>
-                  <p className="text-sm text-muted-foreground">Display your store logo on invoices</p>
+            </div>
+          )}
+
+          {activeTab === "currency" && (
+            <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="bg-blue-50 p-4 rounded-md mb-6">
+                <h4 className="font-medium text-blue-800 mb-2">Currency Settings</h4>
+                <p className="text-sm text-blue-700">Configure the currencies you want to use in your store.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Active Currency</label>
+                <select
+                  value={selectedCurrency}
+                  onChange={(e) => handleCurrencyChange(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {availableCurrencies.map((currency) => (
+                    <option key={currency.code} value={currency.code}>
+                      {currency.code} - {currency.name} ({currency.symbol})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="border rounded-md overflow-hidden">
+                <div className="flex justify-between items-center p-4 bg-gray-50 border-b">
+                  <h5 className="font-medium">Available Currencies</h5>
+                  <button
+                    onClick={() => setShowAddCurrency(!showAddCurrency)}
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    {showAddCurrency ? "Cancel" : "Add Currency"}
+                  </button>
                 </div>
-                <Switch
-                  id="show-logo"
-                  checked={invoiceSettings.showLogo}
-                  onCheckedChange={(checked) => handleInvoiceSwitchChange("showLogo", checked)}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="show-signature">Show Signature Space</Label>
-                  <p className="text-sm text-muted-foreground">Include a space for signature on invoices</p>
-                </div>
-                <Switch
-                  id="show-signature"
-                  checked={invoiceSettings.showSignature}
-                  onCheckedChange={(checked) => handleInvoiceSwitchChange("showSignature", checked)}
-                />
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button>Save Invoice Settings</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-        <TabsContent value="payment">
-          <Card>
-            <CardHeader>
-              <CardTitle>Payment Settings</CardTitle>
-              <CardDescription>Configure payment methods and options</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="accept-cash">Accept Cash</Label>
-                  <p className="text-sm text-muted-foreground">Allow cash payments</p>
-                </div>
-                <Switch
-                  id="accept-cash"
-                  checked={paymentSettings.acceptCash}
-                  onCheckedChange={(checked) => handlePaymentSwitchChange("acceptCash", checked)}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="accept-card">Accept Card</Label>
-                  <p className="text-sm text-muted-foreground">Allow card payments (manually processed)</p>
-                </div>
-                <Switch
-                  id="accept-card"
-                  checked={paymentSettings.acceptCard}
-                  onCheckedChange={(checked) => handlePaymentSwitchChange("acceptCard", checked)}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="accept-upi">Accept UPI</Label>
-                  <p className="text-sm text-muted-foreground">Allow UPI payments</p>
-                </div>
-                <Switch
-                  id="accept-upi"
-                  checked={paymentSettings.acceptUPI}
-                  onCheckedChange={(checked) => handlePaymentSwitchChange("acceptUPI", checked)}
-                />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="accept-bank">Accept Bank Transfer</Label>
-                  <p className="text-sm text-muted-foreground">Allow bank transfer payments</p>
-                </div>
-                <Switch
-                  id="accept-bank"
-                  checked={paymentSettings.acceptBankTransfer}
-                  onCheckedChange={(checked) => handlePaymentSwitchChange("acceptBankTransfer", checked)}
-                />
-              </div>
-              <Separator className="my-4" />
-              <div className="space-y-2">
-                <Label>Payment QR Code</Label>
-                <div className="flex flex-col gap-4">
-                  {paymentSettings.qrCodeUrl ? (
-                    <div className="flex flex-col items-center gap-4 sm:flex-row">
-                      <div className="border p-4 rounded-lg">
-                        <Image
-                          src={paymentSettings.qrCodeUrl || "/placeholder.svg"}
-                          alt="Payment QR Code"
-                          width={150}
-                          height={150}
-                          className="object-contain"
+
+                {showAddCurrency && (
+                  <div className="bg-gray-50 p-4 border-b">
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Code</label>
+                        <input
+                          type="text"
+                          value={newCurrencyCode}
+                          onChange={(e) => setNewCurrencyCode(e.target.value)}
+                          placeholder="USD"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          maxLength={3}
                         />
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <p className="text-sm text-muted-foreground">
-                          This QR code will be displayed to customers when they choose QR payment.
-                        </p>
-                        <Button variant="outline" onClick={() => qrCodeInputRef.current?.click()}>
-                          Change QR Code
-                        </Button>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Symbol</label>
+                        <input
+                          type="text"
+                          value={newCurrencySymbol}
+                          onChange={(e) => setNewCurrencySymbol(e.target.value)}
+                          placeholder="$"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          maxLength={3}
+                        />
                       </div>
                     </div>
-                  ) : (
-                    <div className="border border-dashed rounded-lg p-8 flex flex-col items-center justify-center">
-                      <QrCode className="h-10 w-10 text-muted-foreground mb-4" />
-                      <p className="text-sm text-center text-muted-foreground mb-4">
-                        Upload your payment QR code (UPI, PayTM, etc.)
-                      </p>
-                      <Button variant="outline" onClick={() => qrCodeInputRef.current?.click()}>
-                        Upload QR Code
-                      </Button>
+                    <div className="mb-4">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={newCurrencyName}
+                        onChange={(e) => setNewCurrencyName(e.target.value)}
+                        placeholder="US Dollar"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                      />
                     </div>
-                  )}
-                  <input
-                    ref={qrCodeInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleQrCodeUpload}
-                    className="hidden"
-                  />
+                    <div className="mb-4">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Exchange Rate (1 INR =)</label>
+                      <input
+                        type="number"
+                        value={newCurrencyRate}
+                        onChange={(e) => setNewCurrencyRate(e.target.value)}
+                        step="0.0001"
+                        min="0.0001"
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <button
+                      onClick={handleAddCurrency}
+                      className="w-full bg-blue-600 text-white text-sm py-2 rounded-md hover:bg-blue-700"
+                    >
+                      Add Currency
+                    </button>
+                  </div>
+                )}
+
+                <div className="max-h-80 overflow-y-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Code
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Name
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Symbol
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Rate
+                        </th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {availableCurrencies.map((currency) => (
+                        <tr key={currency.code} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">{currency.code}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">{currency.name}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">{currency.symbol}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            {editingCurrency === currency.code ? (
+                              <input
+                                type="number"
+                                value={editCurrencyRate}
+                                onChange={(e) => setEditCurrencyRate(e.target.value)}
+                                step="0.0001"
+                                min="0.0001"
+                                className="w-24 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                              />
+                            ) : (
+                              currency.exchangeRate
+                            )}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-right">
+                            {editingCurrency === currency.code ? (
+                              <button
+                                onClick={() => handleUpdateCurrencyRate(currency.code)}
+                                className="text-green-600 hover:text-green-900 text-xs font-medium"
+                              >
+                                Save
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setEditingCurrency(currency.code)
+                                  setEditCurrencyRate(currency.exchangeRate.toString())
+                                }}
+                                className="text-blue-600 hover:text-blue-900 text-xs font-medium mr-3"
+                                disabled={currency.code === "INR"}
+                              >
+                                Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteCurrency(currency.code)}
+                              className="text-red-600 hover:text-red-900 text-xs font-medium"
+                              disabled={currency.code === "INR"}
+                            >
+                              <Trash2 className="h-3 w-3 inline" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            </CardContent>
-            <CardFooter>
-              <Button>Save Payment Settings</Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          )}
+
+          {activeTab === "tax" && (
+            <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="bg-blue-50 p-4 rounded-md mb-6">
+                <h4 className="font-medium text-blue-800 mb-2">Tax Settings</h4>
+                <p className="text-sm text-blue-700">Configure tax settings for your invoices and reports.</p>
+              </div>
+
+              <div className="space-y-4 bg-white p-6 rounded-lg border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="gst-enabled"
+                      checked={enableGst}
+                      onChange={(e) => setEnableGst(e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="gst-enabled" className="ml-2 text-sm font-medium text-gray-700">
+                      Enable GST
+                    </label>
+                  </div>
+                  <span className="text-xs text-gray-500">Goods and Services Tax</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="cgst-sgst"
+                      checked={splitGst}
+                      onChange={(e) => setSplitGst(e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="cgst-sgst" className="ml-2 text-sm font-medium text-gray-700">
+                      Split GST into CGST & SGST
+                    </label>
+                  </div>
+                  <span className="text-xs text-gray-500">For intra-state transactions</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="tcs-enabled"
+                      checked={enableTcs}
+                      onChange={(e) => setEnableTcs(e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="tcs-enabled" className="ml-2 text-sm font-medium text-gray-700">
+                      Enable TCS
+                    </label>
+                  </div>
+                  <span className="text-xs text-gray-500">Tax Collected at Source</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="tds-enabled"
+                      checked={enableTds}
+                      onChange={(e) => setEnableTds(e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="tds-enabled" className="ml-2 text-sm font-medium text-gray-700">
+                      Enable TDS
+                    </label>
+                  </div>
+                  <span className="text-xs text-gray-500">Tax Deducted at Source</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "branding" && (
+            <div className="space-y-6 max-w-2xl mx-auto">
+              <div className="bg-blue-50 p-4 rounded-md mb-6">
+                <h4 className="font-medium text-blue-800 mb-2">Branding Settings</h4>
+                <p className="text-sm text-blue-700">Customize the look and feel of your store and invoices.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Store Logo</label>
+                  <div className="flex items-center space-x-4">
+                    <div className="w-24 h-24 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border">
+                      {settings?.logo ? (
+                        <img
+                          src={settings.logo || "/placeholder.svg"}
+                          alt="Store Logo"
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-gray-400 text-xs text-center">No Logo</div>
+                      )}
+                    </div>
+                    <label className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm cursor-pointer hover:bg-gray-50 shadow-sm">
+                      <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                      <Upload className="h-4 w-4 inline mr-2" />
+                      Upload Logo
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment QR Code</label>
+                  <div className="flex items-center space-x-4">
+                    <div className="w-24 h-24 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden border">
+                      {settings?.qrCode ? (
+                        <img
+                          src={settings.qrCode || "/placeholder.svg"}
+                          alt="QR Code"
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-gray-400 text-xs text-center">No QR</div>
+                      )}
+                    </div>
+                    <label className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm cursor-pointer hover:bg-gray-50 shadow-sm">
+                      <input type="file" accept="image/*" className="hidden" onChange={handleQrCodeUpload} />
+                      <Upload className="h-4 w-4 inline mr-2" />
+                      Upload QR Code
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
+                <div className="flex items-center space-x-4">
+                  <input
+                    type="color"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="w-12 h-12 border-0 p-0 rounded"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm text-gray-500 mb-2">{primaryColor}</div>
+                    <div className="h-8 rounded-md" style={{ backgroundColor: primaryColor }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
-

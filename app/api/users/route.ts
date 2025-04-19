@@ -1,47 +1,48 @@
 import { NextResponse } from "next/server"
-import dbConnect from "@/lib/mongoose"
-import User from "@/models/User"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "../auth/[...nextauth]/route"
+import { getSql } from "@/lib/db"
 
 export async function GET() {
   try {
-    await dbConnect()
-    const users = await User.find({}).select("-password")
-    return NextResponse.json(users)
+    const sql = getSql()
+    const users = await sql`SELECT id, name, email, role, created_at, updated_at FROM users`
+
+    return NextResponse.json({ users })
   } catch (error) {
+    console.error("Error fetching users:", error)
     return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
   try {
-    // Check if the current user is an admin
-    const session = await getServerSession(authOptions)
-    if (!session || session.user.role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    const { name, email, password, role } = await request.json()
+
+    if (!name || !email || !password || !role) {
+      return NextResponse.json({ error: "Name, email, password, and role are required" }, { status: 400 })
     }
 
-    await dbConnect()
-    const body = await request.json()
+    const sql = getSql()
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email: body.email })
-    if (existingUser) {
-      return NextResponse.json({ error: "User with this email already exists" }, { status: 400 })
+    const existingUsers = await sql`SELECT * FROM users WHERE email = ${email}`
+
+    if (existingUsers.length > 0) {
+      return NextResponse.json({ error: "User with this email already exists" }, { status: 409 })
     }
 
-    // Create the user
-    const user = await User.create({
-      name: body.name,
-      email: body.email,
-      role: body.role || "cashier",
-      authorized: body.authorized || false,
-    })
+    // In a real app, you would hash the password before storing
+    const newUser = await sql`
+      INSERT INTO users (name, email, password, role)
+      VALUES (${name}, ${email}, ${password}, ${role})
+      RETURNING id, name, email, role, created_at, updated_at
+    `
 
-    return NextResponse.json({ success: true, id: user._id })
+    return NextResponse.json({
+      user: newUser[0],
+      message: "User created successfully",
+    })
   } catch (error) {
+    console.error("Error creating user:", error)
     return NextResponse.json({ error: "Failed to create user" }, { status: 500 })
   }
 }
-

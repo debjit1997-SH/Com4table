@@ -1,39 +1,22 @@
 import type React from "react"
-import type { Metadata } from "next"
-import { Inter } from "next/font/google"
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { SessionProvider } from "next-auth/react"
-import { AuthProvider } from "@/contexts/AuthContext"
+import { Inter } from "next/font/google"
+import { ToastProvider } from "@/components/providers/toast-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata: Metadata = {
-  title: "StoreBill - Billing Software",
-  description: "A complete billing solution for retail stores",
+export const metadata = {
+  title: "Billing Software",
+  description: "Custom billing software for small businesses",
     generator: 'v0.dev'
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={inter.className}>
-        <SessionProvider>
-          <AuthProvider>
-            <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-              {children}
-            </ThemeProvider>
-          </AuthProvider>
-        </SessionProvider>
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   )
 }
-
-
-
-import './globals.css'

@@ -1,568 +1,223 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Plus, Trash2, Mail, User, AlertCircle, Check } from "lucide-react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
+import { Search, Plus, Edit, Trash2 } from "lucide-react"
+import { useAuthStore, type UserRole } from "@/lib/auth-state"
+import { useToast } from "@/components/providers/toast-provider"
+import AddUserModal from "@/components/add-user-modal"
+import Modal from "@/components/ui/modal"
+
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@example.com"
 
 export default function UsersPage() {
-  const { data: session } = useSession()
-  const [users, setUsers] = useState([])
-  const [pendingUsers, setPendingUsers] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [showAddDialog, setShowAddDialog] = useState(false)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [userToDelete, setUserToDelete] = useState(null)
-  const [error, setError] = useState("")
-  const [newUser, setNewUser] = useState({
-    name: "",
-    email: "",
-    role: "cashier",
-  })
+  const { isAuthenticated, user, users, removeUser, updateUserRole } = useAuthStore()
+  const router = useRouter()
+  const { showToast } = useToast()
 
-  // Fetch users from the database
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        setIsLoading(true)
-        const response = await fetch("/api/users")
-        if (!response.ok) {
-          throw new Error("Failed to fetch users")
-        }
-        const data = await response.json()
+  const [search, setSearch] = useState("")
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [userToDelete, setUserToDelete] = useState<number | null>(null)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [userToEdit, setUserToEdit] = useState<{ id: number; role: UserRole } | null>(null)
 
-        // Separate authorized and pending users
-        const authorized = data.filter((user) => user.authorized)
-        const pending = data.filter((user) => !user.authorized)
+  // Filter users based on search
+  const filteredUsers = users.filter(
+    (u) =>
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.email.toLowerCase().includes(search.toLowerCase()) ||
+      u.role.toLowerCase().includes(search.toLowerCase()),
+  )
 
-        setUsers(authorized)
-        setPendingUsers(pending)
-      } catch (error) {
-        console.error("Error fetching users:", error)
-        setError("Failed to load users")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchUsers()
-  }, [])
-
-  const handleAddUser = async () => {
-    if (!newUser.name || !newUser.email) {
-      setError("Name and email are required")
-      return
-    }
-
-    if (!newUser.email.includes("@")) {
-      setError("Please enter a valid email address")
-      return
-    }
-
-    try {
-      const response = await fetch("/api/users", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...newUser,
-          authorized: true,
-        }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Failed to add user")
-      }
-
-      // Refresh users list
-      const updatedUsersResponse = await fetch("/api/users")
-      const updatedUsersData = await updatedUsersResponse.json()
-
-      // Separate authorized and pending users
-      const authorized = updatedUsersData.filter((user) => user.authorized)
-      const pending = updatedUsersData.filter((user) => !user.authorized)
-
-      setUsers(authorized)
-      setPendingUsers(pending)
-
-      setNewUser({ name: "", email: "", role: "cashier" })
-      setShowAddDialog(false)
-      setError("")
-    } catch (error) {
-      console.error("Error adding user:", error)
-      setError(error.message)
-    }
+  // Handle user deletion
+  const handleDeleteUser = (id: number) => {
+    setUserToDelete(id)
+    setIsDeleteModalOpen(true)
   }
 
-  const handleAuthorizeUser = async (userId) => {
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          authorized: true,
-          role: "cashier", // Default role for new users
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to authorize user")
-      }
-
-      // Refresh users list
-      const updatedUsersResponse = await fetch("/api/users")
-      const updatedUsersData = await updatedUsersResponse.json()
-
-      // Separate authorized and pending users
-      const authorized = updatedUsersData.filter((user) => user.authorized)
-      const pending = updatedUsersData.filter((user) => !user.authorized)
-
-      setUsers(authorized)
-      setPendingUsers(pending)
-    } catch (error) {
-      console.error("Error authorizing user:", error)
-      setError("Failed to authorize user")
-    }
-  }
-
-  const handleDeleteUser = async (id) => {
-    // Prevent deleting the current user
-    if (id === session?.user?.id) {
-      setError("You cannot delete your own account")
-      setTimeout(() => setError(""), 3000)
-      return
-    }
-
-    const user = users.find((u) => u._id === id) || pendingUsers.find((u) => u._id === id)
-    setUserToDelete(user)
-    setShowDeleteDialog(true)
-  }
-
-  const confirmDeleteUser = async () => {
+  const confirmDeleteUser = () => {
     if (userToDelete) {
-      try {
-        const response = await fetch(`/api/users/${userToDelete._id}`, {
-          method: "DELETE",
-        })
-
-        if (!response.ok) {
-          throw new Error("Failed to delete user")
-        }
-
-        // Refresh users list
-        const updatedUsersResponse = await fetch("/api/users")
-        const updatedUsersData = await updatedUsersResponse.json()
-
-        // Separate authorized and pending users
-        const authorized = updatedUsersData.filter((user) => user.authorized)
-        const pending = updatedUsersData.filter((user) => !user.authorized)
-
-        setUsers(authorized)
-        setPendingUsers(pending)
-
-        setShowDeleteDialog(false)
-        setUserToDelete(null)
-      } catch (error) {
-        console.error("Error deleting user:", error)
-        setError("Failed to delete user")
-      }
+      removeUser(userToDelete)
+      showToast("success", "User deleted successfully")
+      setIsDeleteModalOpen(false)
     }
   }
 
-  const handleUpdateUserRole = async (userId, newRole) => {
-    try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          role: newRole,
-        }),
-      })
+  // Handle user role update
+  const handleEditUser = (id: number, role: UserRole) => {
+    setUserToEdit({ id, role })
+    setIsEditModalOpen(true)
+  }
 
-      if (!response.ok) {
-        throw new Error("Failed to update user role")
-      }
-
-      // Refresh users list
-      const updatedUsersResponse = await fetch("/api/users")
-      const updatedUsersData = await updatedUsersResponse.json()
-
-      // Separate authorized and pending users
-      const authorized = updatedUsersData.filter((user) => user.authorized)
-      const pending = updatedUsersData.filter((user) => !user.authorized)
-
-      setUsers(authorized)
-      setPendingUsers(pending)
-    } catch (error) {
-      console.error("Error updating user role:", error)
-      setError("Failed to update user role")
+  const confirmEditUser = () => {
+    if (userToEdit) {
+      updateUserRole(userToEdit.id, userToEdit.role)
+      showToast("success", "User role updated successfully")
+      setIsEditModalOpen(false)
     }
   }
 
-  const getRoleBadgeColor = (role) => {
-    switch (role) {
-      case "admin":
-        return "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400"
-      case "manager":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
-      case "cashier":
-        return "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400"
-      case "pending":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400"
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400"
-    }
-  }
-
-  // Update the getRoleDescription function to better define the roles
-  const getRoleDescription = (role) => {
-    switch (role) {
-      case "admin":
-        return "Full access to all features, settings, and user management"
-      case "manager":
-        return "Can manage products, customers, billing, and view reports. Cannot manage users or change system settings."
-      case "cashier":
-        return "Can create bills and manage customers. Limited access to reports and no access to settings."
-      case "pending":
-        return "Waiting for authorization. No access to the system."
-      default:
-        return ""
-    }
-  }
-
-  // Add a function to check if a user has permission for a specific feature
-  const hasPermission = (role, feature) => {
-    const permissions = {
-      admin: ["billing", "invoices", "customers", "products", "reports", "users", "settings"],
-      manager: ["billing", "invoices", "customers", "products", "reports"],
-      cashier: ["billing", "customers"],
-      pending: [],
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/login")
+      return
     }
 
-    return permissions[role]?.includes(feature) || false
-  }
+    // Only admin can access this page
+    if (user?.role !== "admin") {
+      showToast("error", "You don't have permission to access this page")
+      router.push("/dashboard")
+    }
+  }, [isAuthenticated, user, router, showToast])
 
-  if (isLoading) {
-    return <div className="flex justify-center items-center h-64">Loading users...</div>
+  if (!isAuthenticated || user?.role !== "admin") {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
-        <Button onClick={() => setShowAddDialog(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add User
-        </Button>
+    <div className="p-6">
+      <div className="bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-medium">Users</h3>
+          <button
+            onClick={() => setIsAddUserModalOpen(true)}
+            className="flex items-center space-x-2 px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add User</span>
+          </button>
+        </div>
+
+        <div className="mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+            <input
+              type="text"
+              placeholder="Search users..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredUsers.map((user) => (
+                <tr key={user.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.name}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <span
+                      className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        user.role === "admin"
+                          ? "bg-purple-100 text-purple-800"
+                          : user.role === "manager"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-green-100 text-green-800"
+                      }`}
+                    >
+                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <button
+                      onClick={() => handleEditUser(user.id, user.role)}
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                      disabled={user.email === ADMIN_EMAIL}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user.id)}
+                      className="text-red-600 hover:text-red-900"
+                      disabled={user.email === ADMIN_EMAIL}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {filteredUsers.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No users found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      {/* Add User Modal */}
+      <AddUserModal isOpen={isAddUserModalOpen} onClose={() => setIsAddUserModalOpen(false)} />
 
-      {pendingUsers.length > 0 && (
-        <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-900/20">
-          <CardHeader>
-            <CardTitle className="text-yellow-800 dark:text-yellow-400">Pending Authorization</CardTitle>
-            <CardDescription>Users who have signed up but need authorization</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pendingUsers.map((user) => (
-                  <TableRow key={user._id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarImage src={user.image} alt={user.name} />
-                          <AvatarFallback>{user.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div>{user.name}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <Badge
-                        className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400"
-                        variant="outline"
-                      >
-                        Pending
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleAuthorizeUser(user._id)}>
-                          <Check className="mr-2 h-4 w-4" />
-                          Authorize
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user._id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Authorized Users</CardTitle>
-          <CardDescription>Manage users who can access the billing system</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Access Permissions</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.length > 0 ? (
-                users.map((user) => (
-                  <TableRow key={user._id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarImage src={user.image} alt={user.name} />
-                          <AvatarFallback>{user.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div>{user.name}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <Select
-                        defaultValue={user.role}
-                        onValueChange={(value) => handleUpdateUserRole(user._id, value)}
-                        disabled={user._id === session?.user?.id} // Can't change own role
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="manager">Manager</SelectItem>
-                          <SelectItem value="cashier">Cashier</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {hasPermission(user.role, "billing") && (
-                          <Badge
-                            variant="outline"
-                            className="bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
-                          >
-                            Billing
-                          </Badge>
-                        )}
-                        {hasPermission(user.role, "invoices") && (
-                          <Badge
-                            variant="outline"
-                            className="bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                          >
-                            Invoices
-                          </Badge>
-                        )}
-                        {hasPermission(user.role, "customers") && (
-                          <Badge
-                            variant="outline"
-                            className="bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400"
-                          >
-                            Customers
-                          </Badge>
-                        )}
-                        {hasPermission(user.role, "products") && (
-                          <Badge
-                            variant="outline"
-                            className="bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400"
-                          >
-                            Products
-                          </Badge>
-                        )}
-                        {hasPermission(user.role, "reports") && (
-                          <Badge
-                            variant="outline"
-                            className="bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400"
-                          >
-                            Reports
-                          </Badge>
-                        )}
-                        {hasPermission(user.role, "users") && (
-                          <Badge
-                            variant="outline"
-                            className="bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
-                          >
-                            Users
-                          </Badge>
-                        )}
-                        {hasPermission(user.role, "settings") && (
-                          <Badge
-                            variant="outline"
-                            className="bg-gray-50 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400"
-                          >
-                            Settings
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteUser(user._id)}
-                        disabled={user._id === session?.user?.id} // Can't delete own account
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
-                    No authorized users found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Add User Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New User</DialogTitle>
-            <DialogDescription>Add a new user to the billing system</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Name</Label>
-              <div className="flex items-center border rounded-md pl-3">
-                <User className="h-4 w-4 text-muted-foreground mr-2" />
-                <Input
-                  id="name"
-                  placeholder="Full name"
-                  value={newUser.name}
-                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  className="border-0"
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="flex items-center border rounded-md pl-3">
-                <Mail className="h-4 w-4 text-muted-foreground mr-2" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Email address"
-                  value={newUser.email}
-                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                  className="border-0"
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="role">Role</Label>
-              <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value })}>
-                <SelectTrigger id="role">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="cashier">Cashier</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground mt-1">{getRoleDescription(newUser.role)}</p>
-            </div>
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Confirm Delete">
+        <div className="p-4">
+          <p className="mb-4">Are you sure you want to delete this user? This action cannot be undone.</p>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={() => setIsDeleteModalOpen(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button onClick={confirmDeleteUser} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">
+              Delete
+            </button>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddUser}>Add User</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </Modal>
 
-      {/* Delete User Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete User</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this user? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          {userToDelete && (
-            <div className="flex items-center gap-3 py-4">
-              <Avatar>
-                <AvatarImage src={userToDelete.image} alt={userToDelete.name} />
-                <AvatarFallback>{userToDelete.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-medium">{userToDelete.name}</p>
-                <p className="text-sm text-muted-foreground">{userToDelete.email}</p>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+      {/* Edit User Modal */}
+      <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Edit User Role">
+        <div className="p-4">
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <select
+              value={userToEdit?.role || "cashier"}
+              onChange={(e) => setUserToEdit((prev) => (prev ? { ...prev, role: e.target.value as UserRole } : null))}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="admin">Admin</option>
+              <option value="manager">Manager</option>
+              <option value="cashier">Cashier</option>
+            </select>
+          </div>
+          <div className="flex justify-end space-x-3">
+            <button
+              onClick={() => setIsEditModalOpen(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            >
               Cancel
-            </Button>
-            <Button variant="destructive" onClick={confirmDeleteUser}>
-              Delete User
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </button>
+            <button onClick={confirmEditUser} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
-

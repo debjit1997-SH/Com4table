@@ -1,482 +1,473 @@
 "use client"
 
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarIcon, Download, FileText, Search } from "lucide-react"
-import { format } from "date-fns"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Calendar, Download, BarChart2, PieChart, LineChart, TrendingUp } from "lucide-react"
+import { useAuthStore } from "@/lib/auth-state"
+import { useStore } from "@/lib/store"
+import { useToast } from "@/components/providers/toast-provider"
+import HomeButton from "@/components/home-button"
 import {
-  Bar,
   BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
+  Bar,
+  LineChart as RechartsLineChart,
+  Line,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
+  CartesianGrid,
   Tooltip,
-  Line,
-  LineChart,
-} from "@/components/ui/chart"
+  Legend,
+  ResponsiveContainer,
+} from "recharts"
 
 export default function ReportsPage() {
-  const [dateRange, setDateRange] = useState({
-    from: new Date(new Date().setDate(new Date().getDate() - 30)),
-    to: new Date(),
+  const { isAuthenticated, user } = useAuthStore()
+  const router = useRouter()
+  const { bills, products, customers } = useStore()
+  const { showToast } = useToast()
+
+  const [activeTab, setActiveTab] = useState("sales")
+  const [dateRange, setDateRange] = useState("month")
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date()
+    date.setMonth(date.getMonth() - 1)
+    return date.toISOString().split("T")[0]
   })
-  const [searchTerm, setSearchTerm] = useState("")
-  const [filterCategory, setFilterCategory] = useState("all")
+  const [endDate, setEndDate] = useState(() => {
+    return new Date().toISOString().split("T")[0]
+  })
+  const [isGenerating, setIsGenerating] = useState(false)
 
-  // Sample data for reports
-  const salesData = [
-    {
-      id: 1,
-      date: "2023-03-15",
-      invoiceNumber: "INV-1001",
-      customer: "John Doe",
-      customerDetails: {
-        email: "john.doe@example.com",
-        phone: "9876543210",
-        address: "123 Main St, City, State, 400001",
-      },
-      items: 3,
-      total: 1250,
-      paymentMethod: "Cash",
-      status: "completed",
-    },
-    {
-      id: 2,
-      date: "2023-03-14",
-      invoiceNumber: "INV-1002",
-      customer: "Jane Smith",
-      customerDetails: {
-        email: "jane.smith@example.com",
-        phone: "8765432109",
-        address: "456 Park Ave, Town, State, 400002",
-      },
-      items: 2,
-      total: 850,
-      paymentMethod: "Card",
-      status: "completed",
-    },
-    {
-      id: 3,
-      date: "2023-03-13",
-      invoiceNumber: "INV-1003",
-      customer: "Raj Kumar",
-      customerDetails: {
-        email: "raj.kumar@example.com",
-        phone: "7654321098",
-        address: "789 Oak St, Village, State, 400003",
-      },
-      items: 5,
-      total: 2500,
-      paymentMethod: "UPI",
-      status: "completed",
-    },
-    {
-      id: 4,
-      date: "2023-03-12",
-      invoiceNumber: "INV-1004",
-      customer: "Priya Sharma",
-      customerDetails: {
-        email: "priya.sharma@example.com",
-        phone: "6543210987",
-        address: "101 Pine St, Suburb, State, 400004",
-      },
-      items: 1,
-      total: 450,
-      paymentMethod: "Cash",
-      status: "completed",
-    },
-    {
-      id: 5,
-      date: "2023-03-11",
-      invoiceNumber: "INV-1005",
-      customer: "Alex Johnson",
-      customerDetails: {
-        email: "alex.johnson@example.com",
-        phone: "5432109876",
-        address: "202 Maple St, District, State, 400005",
-      },
-      items: 4,
-      total: 1800,
-      paymentMethod: "QR",
-      status: "completed",
-    },
-    {
-      id: 6,
-      date: "2023-03-10",
-      invoiceNumber: "INV-1006",
-      customer: "Sarah Williams",
-      customerDetails: {
-        email: "sarah.w@example.com",
-        phone: "4321098765",
-        address: "303 Cedar St, County, State, 400006",
-      },
-      items: 2,
-      total: 950,
-      paymentMethod: "Card",
-      status: "completed",
-    },
-    {
-      id: 7,
-      date: "2023-03-09",
-      invoiceNumber: "INV-1007",
-      customer: "Michael Brown",
-      customerDetails: {
-        email: "michael.b@example.com",
-        phone: "3210987654",
-        address: "404 Elm St, Borough, State, 400007",
-      },
-      items: 3,
-      total: 1350,
-      paymentMethod: "Cash",
-      status: "completed",
-    },
-    {
-      id: 8,
-      date: "2023-03-08",
-      invoiceNumber: "INV-1008",
-      customer: "Emily Davis",
-      customerDetails: {
-        email: "emily.d@example.com",
-        phone: "2109876543",
-        address: "505 Birch St, Township, State, 400008",
-      },
-      items: 1,
-      total: 550,
-      paymentMethod: "UPI",
-      status: "completed",
-    },
-    {
-      id: 9,
-      date: "2023-03-07",
-      invoiceNumber: "INV-1009",
-      customer: "David Wilson",
-      customerDetails: {
-        email: "david.w@example.com",
-        phone: "1098765432",
-        address: "606 Spruce St, District, State, 400009",
-      },
-      items: 6,
-      total: 2800,
-      paymentMethod: "Card",
-      status: "completed",
-    },
-    {
-      id: 10,
-      date: "2023-03-06",
-      invoiceNumber: "INV-1010",
-      customer: "Lisa Miller",
-      customerDetails: {
-        email: "lisa.m@example.com",
-        phone: "0987654321",
-        address: "707 Walnut St, City, State, 400010",
-      },
-      items: 2,
-      total: 1050,
-      paymentMethod: "Cash",
-      status: "completed",
-    },
-  ]
-
-  // Chart data
-  const monthlySalesData = [
-    { name: "Jan", sales: 12500 },
-    { name: "Feb", sales: 15000 },
-    { name: "Mar", sales: 18000 },
-    { name: "Apr", sales: 16500 },
-    { name: "May", sales: 19000 },
-    { name: "Jun", sales: 22000 },
-    { name: "Jul", sales: 20500 },
-    { name: "Aug", sales: 23000 },
-    { name: "Sep", sales: 25000 },
-    { name: "Oct", sales: 27500 },
-    { name: "Nov", sales: 30000 },
-    { name: "Dec", sales: 35000 },
-  ]
-
-  const paymentMethodData = [
-    { name: "Cash", value: 45 },
-    { name: "Card", value: 25 },
-    { name: "UPI", value: 20 },
-    { name: "QR", value: 10 },
-  ]
-
-  const dailySalesData = [
-    { name: "Mon", sales: 4500 },
-    { name: "Tue", sales: 5200 },
-    { name: "Wed", sales: 4800 },
-    { name: "Thu", sales: 5500 },
-    { name: "Fri", sales: 6200 },
-    { name: "Sat", sales: 7500 },
-    { name: "Sun", sales: 5800 },
-  ]
-
-  const filteredSales = salesData.filter((sale) => {
-    const matchesSearch =
-      sale.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sale.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase())
-
-    const matchesCategory =
-      filterCategory === "all" || sale.paymentMethod.toLowerCase() === filterCategory.toLowerCase()
-
-    const saleDate = new Date(sale.date)
-    const isInDateRange = saleDate >= dateRange.from && saleDate <= dateRange.to
-
-    return matchesSearch && matchesCategory && isInDateRange
+  // Filter bills by date range
+  const filteredBills = bills.filter((bill) => {
+    const billDate = new Date(bill.createdAt)
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    end.setHours(23, 59, 59, 999) // Include the entire end day
+    return billDate >= start && billDate <= end
   })
 
-  const totalSales = filteredSales.reduce((sum, sale) => sum + sale.total, 0)
-  const totalItems = filteredSales.reduce((sum, sale) => sum + sale.items, 0)
-  const averageSale = filteredSales.length > 0 ? totalSales / filteredSales.length : 0
+  // Prepare data for charts
+  const prepareSalesData = () => {
+    // Group by date
+    const salesByDate = filteredBills.reduce((acc, bill) => {
+      const date = new Date(bill.createdAt).toLocaleDateString()
+      if (!acc[date]) {
+        acc[date] = { date, sales: 0, revenue: 0, tax: 0 }
+      }
+      acc[date].sales += 1
+      acc[date].revenue += bill.total
+      acc[date].tax += bill.gstAmount
+      return acc
+    }, {})
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString("en-IN", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
+    return Object.values(salesByDate)
+  }
+
+  const prepareProductData = () => {
+    // Group by product
+    const salesByProduct = {}
+
+    filteredBills.forEach((bill) => {
+      bill.items.forEach((item) => {
+        if (!salesByProduct[item.name]) {
+          salesByProduct[item.name] = { name: item.name, quantity: 0, revenue: 0 }
+        }
+        salesByProduct[item.name].quantity += item.quantity
+        salesByProduct[item.name].revenue += item.price * item.quantity
+      })
     })
+
+    return Object.values(salesByProduct)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5)
+  }
+
+  const prepareCategoryData = () => {
+    // Group by category
+    const salesByCategory = {}
+
+    filteredBills.forEach((bill) => {
+      bill.items.forEach((item) => {
+        const product = products.find((p) => p.id === item.productId)
+        const category = product ? product.category : "Other"
+
+        if (!salesByCategory[category]) {
+          salesByCategory[category] = { name: category, value: 0 }
+        }
+        salesByCategory[category].value += item.price * item.quantity
+      })
+    })
+
+    return Object.values(salesByCategory)
+  }
+
+  // Calculate summary metrics
+  const totalRevenue = filteredBills.reduce((sum, bill) => sum + bill.total, 0)
+  const totalSales = filteredBills.length
+  const totalTax = filteredBills.reduce((sum, bill) => sum + bill.gstAmount, 0)
+  const averageOrderValue = totalSales > 0 ? totalRevenue / totalSales : 0
+
+  // Handle date range change
+  const handleDateRangeChange = (range) => {
+    setDateRange(range)
+    const today = new Date()
+    const start = new Date()
+
+    switch (range) {
+      case "week":
+        start.setDate(today.getDate() - 7)
+        break
+      case "month":
+        start.setMonth(today.getMonth() - 1)
+        break
+      case "quarter":
+        start.setMonth(today.getMonth() - 3)
+        break
+      case "year":
+        start.setFullYear(today.getFullYear() - 1)
+        break
+      default:
+        start.setMonth(today.getMonth() - 1)
+    }
+
+    setStartDate(start.toISOString().split("T")[0])
+    setEndDate(today.toISOString().split("T")[0])
+  }
+
+  // Add this function to the ReportsPage component
+
+  // Generate and download report
+  const handleGenerateReport = () => {
+    setIsGenerating(true)
+    showToast("info", "Generating report...")
+
+    try {
+      // Create a simple CSV report
+      const headers = "Date,Invoice,Customer,Amount,Tax\n"
+      const rows = filteredBills
+        .map(
+          (bill) =>
+            `${new Date(bill.createdAt).toLocaleDateString()},${bill.billNumber},${bill.customerName || "Walk-in"},${bill.total},${bill.gstAmount}`,
+        )
+        .join("\n")
+
+      const csvContent = headers + rows
+
+      // Create a blob and download
+      const blob = new Blob([csvContent], { type: "text/csv" })
+      const url = URL.createObjectURL(blob)
+
+      // Create a link and trigger download
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `sales-report-${new Date().toISOString().split("T")[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        setIsGenerating(false)
+        showToast("success", "Report downloaded successfully")
+      }, 100)
+    } catch (error) {
+      console.error("Error generating report:", error)
+      setIsGenerating(false)
+      showToast("error", "Failed to generate report. Please try again.")
+    }
+  }
+
+  // Colors for charts
+  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"]
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push("/login")
+    }
+  }, [isAuthenticated, router])
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Reports & Analytics</h1>
-        <Button>
-          <Download className="mr-2 h-4 w-4" />
-          Export Report
-        </Button>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{totalSales.toLocaleString("en-IN")}</div>
-            <p className="text-xs text-muted-foreground">For the selected period</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Items Sold</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalItems}</div>
-            <p className="text-xs text-muted-foreground">Across {filteredSales.length} invoices</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Average Sale</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              ₹{averageSale.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-            </div>
-            <p className="text-xs text-muted-foreground">Per invoice</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-4">
-        <div className="flex-1">
-          <Label>Date Range</Label>
-          <div className="flex items-center mt-1.5">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="w-full justify-start text-left font-normal">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateRange.from ? (
-                    dateRange.to ? (
-                      <>
-                        {format(dateRange.from, "PPP")} - {format(dateRange.to, "PPP")}
-                      </>
-                    ) : (
-                      format(dateRange.from, "PPP")
-                    )
-                  ) : (
-                    <span>Pick a date range</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  initialFocus
-                  mode="range"
-                  defaultMonth={dateRange.from}
-                  selected={{
-                    from: dateRange.from,
-                    to: dateRange.to,
-                  }}
-                  onSelect={(range) => {
-                    if (range?.from && range?.to) {
-                      setDateRange({ from: range.from, to: range.to })
-                    }
-                  }}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
+    <div className="p-6">
+      <div className="bg-white p-6 rounded-lg shadow-sm border">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-medium">Reports</h3>
+          <div className="flex space-x-2">
+            <HomeButton />
+            <button
+              onClick={handleGenerateReport}
+              disabled={isGenerating}
+              className="flex items-center space-x-2 px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              <span>{isGenerating ? "Generating..." : "Export Report"}</span>
+            </button>
           </div>
         </div>
-        <div className="flex-1">
-          <Label>Filter by Payment Method</Label>
-          <Select value={filterCategory} onValueChange={setFilterCategory}>
-            <SelectTrigger className="mt-1.5">
-              <SelectValue placeholder="Select payment method" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Methods</SelectItem>
-              <SelectItem value="cash">Cash</SelectItem>
-              <SelectItem value="card">Card</SelectItem>
-              <SelectItem value="upi">UPI</SelectItem>
-              <SelectItem value="qr">QR</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex-1">
-          <Label>Search</Label>
-          <div className="relative mt-1.5">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by customer or invoice..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+
+        {/* Date Range Selector */}
+        <div className="mb-6 flex flex-wrap items-center gap-4">
+          <div className="flex items-center space-x-2">
+            <Calendar className="h-5 w-5 text-gray-500" />
+            <span className="text-gray-700">Date Range:</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleDateRangeChange("week")}
+              className={`px-3 py-1.5 rounded-md ${
+                dateRange === "week" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Last Week
+            </button>
+            <button
+              onClick={() => handleDateRangeChange("month")}
+              className={`px-3 py-1.5 rounded-md ${
+                dateRange === "month" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Last Month
+            </button>
+            <button
+              onClick={() => handleDateRangeChange("quarter")}
+              className={`px-3 py-1.5 rounded-md ${
+                dateRange === "quarter" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Last Quarter
+            </button>
+            <button
+              onClick={() => handleDateRangeChange("year")}
+              className={`px-3 py-1.5 rounded-md ${
+                dateRange === "year" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Last Year
+            </button>
+          </div>
+          <div className="flex items-center space-x-2">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="border border-gray-300 rounded-md px-3 py-1.5"
+            />
+            <span>to</span>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="border border-gray-300 rounded-md px-3 py-1.5"
             />
           </div>
         </div>
-      </div>
 
-      <Tabs defaultValue="transactions">
-        <TabsList>
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="charts">Charts & Analytics</TabsTrigger>
-        </TabsList>
-        <TabsContent value="transactions">
-          <Card>
-            <CardHeader>
-              <CardTitle>Sales Transactions</CardTitle>
-              <CardDescription>Detailed view of all sales transactions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Contact & Address</TableHead>
-                    <TableHead>Items</TableHead>
-                    <TableHead>Payment Method</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSales.length > 0 ? (
-                    filteredSales.map((sale) => (
-                      <TableRow key={sale.id}>
-                        <TableCell>{formatDate(sale.date)}</TableCell>
-                        <TableCell>{sale.invoiceNumber}</TableCell>
-                        <TableCell className="font-medium">{sale.customer}</TableCell>
-                        <TableCell>
-                          <div className="text-xs">
-                            <div>{sale.customerDetails.phone}</div>
-                            <div className="text-muted-foreground truncate max-w-[200px]">
-                              {sale.customerDetails.address}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{sale.items}</TableCell>
-                        <TableCell>{sale.paymentMethod}</TableCell>
-                        <TableCell className="text-right">₹{sale.total.toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <FileText className="h-4 w-4 mr-1" />
-                            View
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-4 text-muted-foreground">
-                        No transactions found
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="charts">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Monthly Sales Trend</CardTitle>
-                <CardDescription>Sales performance over the past year</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlySalesData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" />
-                      <YAxis tickFormatter={(value) => `₹${value / 1000}k`} />
-                      <Tooltip
-                        formatter={(value) => [`₹${value.toLocaleString("en-IN")}`, "Sales"]}
-                        labelStyle={{ fontWeight: "bold", marginBottom: "5px" }}
-                      />
-                      <Bar dataKey="sales" fill="currentColor" className="fill-primary" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Weekly Sales</CardTitle>
-                <CardDescription>Sales performance by day of week</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dailySalesData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" />
-                      <YAxis tickFormatter={(value) => `₹${value / 1000}k`} />
-                      <Tooltip
-                        formatter={(value) => [`₹${value.toLocaleString("en-IN")}`, "Sales"]}
-                        labelStyle={{ fontWeight: "bold", marginBottom: "5px" }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="sales"
-                        stroke="currentColor"
-                        className="stroke-primary"
-                        strokeWidth={2}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm text-blue-600 font-medium">Total Revenue</p>
+                <p className="text-2xl font-bold mt-1">₹{totalRevenue.toFixed(2)}</p>
+              </div>
+              <TrendingUp className="h-6 w-6 text-blue-500" />
+            </div>
           </div>
-        </TabsContent>
-      </Tabs>
+
+          <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm text-green-600 font-medium">Total Sales</p>
+                <p className="text-2xl font-bold mt-1">{totalSales}</p>
+              </div>
+              <BarChart2 className="h-6 w-6 text-green-500" />
+            </div>
+          </div>
+
+          <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm text-purple-600 font-medium">Average Order Value</p>
+                <p className="text-2xl font-bold mt-1">₹{averageOrderValue.toFixed(2)}</p>
+              </div>
+              <LineChart className="h-6 w-6 text-purple-500" />
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-sm text-yellow-600 font-medium">Total Tax Collected</p>
+                <p className="text-2xl font-bold mt-1">₹{totalTax.toFixed(2)}</p>
+              </div>
+              <PieChart className="h-6 w-6 text-yellow-500" />
+            </div>
+          </div>
+        </div>
+
+        {/* Report Tabs */}
+        <div className="mb-6 border-b">
+          <div className="flex space-x-8">
+            <button
+              onClick={() => setActiveTab("sales")}
+              className={`pb-4 px-1 ${
+                activeTab === "sales" ? "border-b-2 border-blue-600 text-blue-600 font-medium" : "text-gray-500"
+              }`}
+            >
+              Sales Report
+            </button>
+            <button
+              onClick={() => setActiveTab("products")}
+              className={`pb-4 px-1 ${
+                activeTab === "products" ? "border-b-2 border-blue-600 text-blue-600 font-medium" : "text-gray-500"
+              }`}
+            >
+              Product Performance
+            </button>
+            <button
+              onClick={() => setActiveTab("categories")}
+              className={`pb-4 px-1 ${
+                activeTab === "categories" ? "border-b-2 border-blue-600 text-blue-600 font-medium" : "text-gray-500"
+              }`}
+            >
+              Category Analysis
+            </button>
+          </div>
+        </div>
+
+        {/* Report Content */}
+        <div className="mb-6">
+          {activeTab === "sales" && (
+            <div>
+              <h4 className="text-lg font-medium mb-4">Sales Trend</h4>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsLineChart data={prepareSalesData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis yAxisId="left" />
+                    <YAxis yAxisId="right" orientation="right" />
+                    <Tooltip />
+                    <Legend />
+                    <Line yAxisId="left" type="monotone" dataKey="revenue" stroke="#8884d8" name="Revenue (₹)" />
+                    <Line yAxisId="right" type="monotone" dataKey="sales" stroke="#82ca9d" name="Sales Count" />
+                  </RechartsLineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "products" && (
+            <div>
+              <h4 className="text-lg font-medium mb-4">Top 5 Products by Revenue</h4>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={prepareProductData()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="revenue" name="Revenue (₹)" fill="#8884d8" />
+                    <Bar dataKey="quantity" name="Quantity Sold" fill="#82ca9d" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "categories" && (
+            <div>
+              <h4 className="text-lg font-medium mb-4">Sales by Category</h4>
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsPieChart>
+                    <Pie
+                      data={prepareCategoryData()}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={true}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {prepareCategoryData().map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => `₹${value.toFixed(2)}`} />
+                    <Legend />
+                  </RechartsPieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Data Table */}
+        <div>
+          <h4 className="text-lg font-medium mb-4">Detailed Data</h4>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Invoice
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Customer
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Amount
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tax
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredBills.map((bill) => (
+                  <tr key={bill.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(bill.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{bill.billNumber}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {bill.customerName || "Walk-in Customer"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{bill.total.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{bill.gstAmount.toFixed(2)}</td>
+                  </tr>
+                ))}
+
+                {filteredBills.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                      No data available for the selected date range
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
-

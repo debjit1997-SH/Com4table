@@ -1,87 +1,95 @@
 import { NextResponse } from "next/server"
-import dbConnect from "@/lib/mongoose"
-import User from "@/models/User"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "../../auth/[...nextauth]/route"
+import { getUserById, updateUser, deleteUser } from "@/lib/services/user-service"
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
-    await dbConnect()
-    const id = params.id
-    const user = await User.findById(id).select("-password")
+    const id = Number.parseInt(params.id)
+
+    if (isNaN(id)) {
+      return NextResponse.json({ error: "Invalid user ID" }, { status: 400 })
+    }
+
+    const user = await getUserById(id)
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    return NextResponse.json(user)
+    // Remove password from the response
+    const { password, ...userWithoutPassword } = user
+
+    return NextResponse.json(userWithoutPassword)
   } catch (error) {
-    return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 })
+    console.error("Error getting user:", error)
+    return NextResponse.json(
+      {
+        error: "Failed to get user",
+        details: error.message,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      },
+      { status: 500 },
+    )
   }
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    // Check if the current user is an admin
-    const session = await getServerSession(authOptions)
-    if (!session || session.user.role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    const id = Number.parseInt(params.id)
+
+    if (isNaN(id)) {
+      return NextResponse.json({ error: "Invalid user ID" }, { status: 400 })
     }
 
-    await dbConnect()
-    const id = params.id
-    const body = await request.json()
+    const userData = await request.json()
 
-    // Format the user data
-    const userData: any = {
-      updatedAt: new Date(),
-    }
+    const updatedUser = await updateUser(id, userData)
 
-    // Only update fields that are provided
-    if (body.name) userData.name = body.name
-    if (body.role) userData.role = body.role
-    if (typeof body.authorized !== "undefined") userData.authorized = body.authorized
+    // Remove password from the response
+    const { password, ...userWithoutPassword } = updatedUser
 
-    const result = await User.findByIdAndUpdate(id, userData, { new: true })
-
-    if (!result) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({ success: true, user: result })
+    return NextResponse.json(userWithoutPassword)
   } catch (error) {
-    return NextResponse.json({ error: "Failed to update user" }, { status: 500 })
+    console.error("Error updating user:", error)
+    return NextResponse.json(
+      {
+        error: "Failed to update user",
+        details: error.message,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      },
+      { status: 500 },
+    )
   }
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    // Check if the current user is an admin
-    const session = await getServerSession(authOptions)
-    if (!session || session.user.role !== "admin") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    const id = Number.parseInt(params.id)
+
+    if (isNaN(id)) {
+      return NextResponse.json({ error: "Invalid user ID" }, { status: 400 })
     }
 
-    await dbConnect()
-    const id = params.id
-
-    // Prevent deleting the last admin
-    const adminCount = await User.countDocuments({ role: "admin" })
-    const userToDelete = await User.findById(id)
-
-    if (adminCount <= 1 && userToDelete?.role === "admin") {
-      return NextResponse.json({ error: "Cannot delete the last admin user" }, { status: 400 })
+    // Don't allow deleting the admin user (ID 1)
+    if (id === 1) {
+      return NextResponse.json({ error: "Cannot delete admin user" }, { status: 403 })
     }
 
-    const result = await User.findByIdAndDelete(id)
+    const success = await deleteUser(id)
 
-    if (!result) {
+    if (!success) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    return NextResponse.json({ error: "Failed to delete user" }, { status: 500 })
+    console.error("Error deleting user:", error)
+    return NextResponse.json(
+      {
+        error: "Failed to delete user",
+        details: error.message,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      },
+      { status: 500 },
+    )
   }
 }
-
